@@ -670,6 +670,93 @@ public class KNNQueryBuilderTests extends KNNTestCase {
         verify(subVisitor).accept(TERM_QUERY);
     }
 
+    // ---------- filter ----------
+
+    public void testFilter_whenFilterIsNull_thenReturnsSameBuilder() {
+        KNNQueryBuilder knnQueryBuilder = KNNQueryBuilder.builder().fieldName(FIELD_NAME).vector(QUERY_VECTOR).k(K).build();
+
+        assertSame(knnQueryBuilder, knnQueryBuilder.filter(null));
+    }
+
+    public void testFilter_whenNoExistingFilter_thenFilterIsPushedIntoKnnQuery() {
+        KNNQueryBuilder knnQueryBuilder = KNNQueryBuilder.builder().fieldName(FIELD_NAME).vector(QUERY_VECTOR).k(K).build();
+
+        QueryBuilder filtered = knnQueryBuilder.filter(TERM_QUERY);
+
+        // must stay a knn query (not a bool wrapping it), so the filter is applied during the search
+        assertThat(filtered, instanceOf(KNNQueryBuilder.class));
+        assertEquals(TERM_QUERY, ((KNNQueryBuilder) filtered).getFilter());
+        // the original builder is left untouched
+        assertNull(knnQueryBuilder.getFilter());
+    }
+
+    public void testFilter_whenExistingFilter_thenFiltersAreCombined() {
+        TermQueryBuilder additionalFilter = QueryBuilders.termQuery("another_field", "another_value");
+        KNNQueryBuilder knnQueryBuilder = KNNQueryBuilder.builder()
+            .fieldName(FIELD_NAME)
+            .vector(QUERY_VECTOR)
+            .k(K)
+            .filter(TERM_QUERY)
+            .build();
+
+        QueryBuilder filtered = knnQueryBuilder.filter(additionalFilter);
+
+        assertThat(filtered, instanceOf(KNNQueryBuilder.class));
+        QueryBuilder combinedFilter = ((KNNQueryBuilder) filtered).getFilter();
+        assertThat(combinedFilter, instanceOf(BoolQueryBuilder.class));
+        BoolQueryBuilder boolFilter = (BoolQueryBuilder) combinedFilter;
+        assertEquals(List.of(TERM_QUERY), boolFilter.must());
+        assertEquals(List.of(additionalFilter), boolFilter.filter());
+        assertEquals(TERM_QUERY, knnQueryBuilder.getFilter());
+    }
+
+    public void testFilter_thenOtherPropertiesArePreserved() {
+        Map<String, ?> methodParameters = Map.of("overquery_factor", 5);
+        KNNQueryBuilder knnQueryBuilder = KNNQueryBuilder.builder()
+            .fieldName(FIELD_NAME)
+            .vector(QUERY_VECTOR)
+            .k(K)
+            .methodParameters(methodParameters)
+            .ignoreUnmapped(true)
+            .expandNested(true)
+            .boost(2.5f)
+            .queryName("my_knn")
+            .build();
+
+        KNNQueryBuilder filtered = (KNNQueryBuilder) knnQueryBuilder.filter(TERM_QUERY);
+
+        KNNQueryBuilder expected = KNNQueryBuilder.builder()
+            .fieldName(FIELD_NAME)
+            .vector(QUERY_VECTOR)
+            .k(K)
+            .methodParameters(methodParameters)
+            .ignoreUnmapped(true)
+            .expandNested(true)
+            .boost(2.5f)
+            .queryName("my_knn")
+            .filter(TERM_QUERY)
+            .build();
+        assertEquals(expected, filtered);
+        assertEquals(2.5f, filtered.boost(), 0.0f);
+        assertEquals("my_knn", filtered.queryName());
+    }
+
+    public void testFilter_whenRadialQuery_thenFilterIsPushedIntoKnnQuery() {
+        KNNQueryBuilder knnQueryBuilder = KNNQueryBuilder.builder()
+            .fieldName(FIELD_NAME)
+            .vector(QUERY_VECTOR)
+            .maxDistance(MAX_DISTANCE)
+            .size(42)
+            .build();
+
+        KNNQueryBuilder filtered = (KNNQueryBuilder) knnQueryBuilder.filter(TERM_QUERY);
+
+        assertEquals(TERM_QUERY, filtered.getFilter());
+        assertEquals(MAX_DISTANCE, filtered.getMaxDistance());
+        assertNull(filtered.getK());
+        assertEquals(Integer.valueOf(42), filtered.getSize());
+    }
+
     // ---------- size serialization ----------
 
     @SneakyThrows

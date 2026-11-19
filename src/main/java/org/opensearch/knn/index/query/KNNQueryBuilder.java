@@ -649,6 +649,41 @@ public class KNNQueryBuilder extends AbstractQueryBuilder<KNNQueryBuilder> imple
     }
 
     /**
+     * Combines the given filter with this query's own {@code filter}, so that it is applied while the
+     * nearest neighbors are searched instead of after them.
+     * <p>
+     * Without this override the default {@link AbstractQueryBuilder#filter(QueryBuilder)} wraps the query as
+     * {@code bool { must: knn, filter: ... }}, which filters the {@code k} neighbors after they were found and
+     * can return fewer than {@code k} documents. This is the method the {@code hybrid} query (classic and
+     * fusion mode) uses to push its own {@code filter} down into each sub-query.
+     *
+     * @param filterToBeAdded filter to be added
+     * @return a new query builder carrying the combined filter, or this builder if the filter is {@code null}
+     */
+    @Override
+    public QueryBuilder filter(QueryBuilder filterToBeAdded) {
+        if (validateFilterParams(filterToBeAdded) == false) {
+            return this;
+        }
+
+        return KNNQueryBuilder.builder()
+            .fieldName(this.fieldName)
+            .vector(this.vector)
+            .k(this.k)
+            .maxDistance(this.maxDistance)
+            .minScore(this.minScore)
+            .methodParameters(this.methodParameters)
+            .filter(this.filter == null ? filterToBeAdded : this.filter.filter(filterToBeAdded))
+            .ignoreUnmapped(this.ignoreUnmapped)
+            .rescoreContext(this.rescoreContext)
+            .expandNested(this.expandNested)
+            .size(this.size)
+            .boost(this.boost())
+            .queryName(this.queryName())
+            .build();
+    }
+
+    /**
      * Visits this query builder and its filter clause using the provided visitor.
      * <p>
      * This method first accepts the visitor for the current {@link KNNQueryBuilder}, then if a filter

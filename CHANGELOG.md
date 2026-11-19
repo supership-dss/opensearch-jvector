@@ -16,6 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Update datastax/jvector library to 4.0.2 
 - Warm OS page cache during segment merge via jvector prefetchL0Records [790](https://github.com/opensearch-project/opensearch-jvector/pull/790)
 - Add KNNQueryBuilder::size property [797](https://github.com/opensearch-project/opensearch-jvector/pull/797)
+- Push the `hybrid` query's `filter` down into `knn` sub-queries by overriding KNNQueryBuilder::filter (hybrid search fusion mode compatibility)
 
 ### Bug Fixes
 - Excessive heap consumption when using PQ/NVQ vectors with derived sources enabled [754](https://github.com/opensearch-project/opensearch-jvector/pull/754)

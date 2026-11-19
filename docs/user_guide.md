@@ -739,9 +739,56 @@ curl -X POST "http://localhost:9200/my-vectors/_search" \
 
 #### Hybrid Search (Vector + Text)
 
-To combine vector similarity search with traditional text search, OpenSearch provides a dedicated [Hybrid Search](https://opensearch.org/docs/latest/search-plugins/hybrid-search/) plugin. It properly normalizes and combines scores from different query types.
+To combine vector similarity search with traditional text search, use the `hybrid` query provided by the neural search plugin. It normalizes and combines the scores of its subqueries, which is necessary because BM25 and vector scores are on different scales.
 
-**Note:** The `neural-search` plugin currently has tight integration with the official k-NN plugin and does not support `opensearch-jvector` at the moment. There are ongoing efforts to address this gap.
+**Note:** The official `neural-search` plugin depends on the official k-NN plugin and cannot be installed together with `opensearch-jvector`. Install the [JVector-compatible neural search plugin](#optional-download-and-install-jvector-compatible-neural-search) instead.
+
+##### Fusion Mode (In-Query Fusion)
+
+Starting with version 3.10 of the neural search plugin, a `hybrid` query can carry a `fusion` object. The coordinating node then normalizes and combines the subquery scores itself, so no search pipeline is required. All nodes must run 3.10 or later. See the [fusion mode documentation](https://docs.opensearch.org/latest/vector-search/ai-search/hybrid-search/fusion-mode/) for the full list of parameters and limitations.
+
+```bash
+curl -X POST "http://localhost:9200/my-vectors/_search" \
+  -H "Content-Type: application/json" -d '
+{
+  "size": 10,
+  "query": {
+    "hybrid": {
+      "queries": [
+        { "match": { "title": "vector search" } },
+        {
+          "knn": {
+            "embedding": {
+              "vector": [0.1, 0.2, 0.3, 0.4],
+              "k": 100
+            }
+          }
+        }
+      ],
+      "filter": { "term": { "category": "technology" } },
+      "fusion": {
+        "window_size": 100,
+        "normalization": { "technique": "min_max" },
+        "combination": {
+          "technique": "arithmetic_mean",
+          "parameters": { "weights": [0.3, 0.7] }
+        }
+      }
+    }
+  }
+}'
+```
+
+For reciprocal rank fusion, set both techniques to `rrf`. An empty `"fusion": {}` applies the defaults (`min_max`, `arithmetic_mean`, `window_size` of `100`).
+
+Things to keep in mind when a subquery targets a JVector field:
+
+- **Set `k` to at least `window_size`.** A `knn` subquery returns at most `k` results per shard regardless of `window_size`, so a smaller `k` leaves the fusion window partly empty.
+- **Use the `filter` parameter of the `hybrid` query to restrict results.** It is pushed down into the `knn` subquery and applied during the graph search, exactly like the subquery's own `filter` (see [Search with Filters](#search-with-filters)).
+- **Subqueries can run twice.** With the default `track_total_hits`, as well as with aggregations, highlighting, or sorting by a field other than `_score`, the subqueries are executed a second time to match documents outside the window. For a `knn` subquery this is a second graph search unless the window did not cut off its results. If you do not need an exact hit count, set `track_total_hits` to `false` or to a value no greater than `window_size`.
+- **Radial search is not available.** `max_distance` and `min_score` are not supported by the `jvector` engine, in fusion mode or otherwise.
+
+The search pipeline approach (a `hybrid` query without `fusion`, combined with a normalization or score ranker processor) remains available.
 
 #### Nested Field Search
 
